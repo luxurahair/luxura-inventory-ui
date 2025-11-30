@@ -1,1 +1,320 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Luxura • Gestion d’inventaire</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+  <style>
+    :root{
+      --bg:#0a0a0a; --panel:#111; --line:#1e1e1e; --fg:#f7f7f5; --muted:#b9b9b4;
+      --gold:#d4af37; --gold-2:#b8932e; --danger:#ff6b6b; --ok:#8BE28B;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--fg);font-family:Inter,system-ui,Segoe UI,Roboto,Arial,sans-serif}
+    .wrap{max-width:1100px;margin:0 auto;padding:24px}
+    .topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
+    .brand{display:flex;gap:12px;align-items:center}
+    .logo{
+      width:48px;height:48px;border-radius:10px;
+      background:linear-gradient(135deg,var(--gold),var(--gold-2));
+      display:flex;align-items:center;justify-content:center;
+      overflow:hidden; box-shadow:0 0 0 1px #2a2a2a;
+    }
+    .logo img{ width:100%; height:100%; object-fit:contain; object-position:center; }
+    .title{font-weight:800;letter-spacing:.2px;font-size:18px}
+    .muted{color:var(--muted);font-size:12px}
+    .card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:16px}
+    .grid{display:grid;gap:16px;grid-template-columns:1fr 1fr}
+    @media (max-width: 900px){.grid{grid-template-columns:1fr}}
+    label{display:block;font-size:12px;color:var(--muted);margin-bottom:6px}
+    input,select{width:100%;padding:10px;border:1px solid var(--line);border-radius:12px;background:#0d0d0d;color:var(--fg)}
+    button{padding:10px 14px;border:1px solid var(--gold-2);border-radius:12px;background:var(--gold);color:#111;cursor:pointer;font-weight:700}
+    .btn-ghost{background:transparent;color:var(--fg);border-color:var(--line)}
+    .toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+    table{width:100%;border-collapse:collapse;font-size:14px}
+    th,td{padding:10px;border-bottom:1px solid var(--line);text-align:left}
+    h3{margin:0 0 10px;font-size:16px}
+    .ok{color:var(--ok)} .err{color:var(--danger)}
 
+    /* Toaster */
+    .toast{
+      position:fixed; left:50%; bottom:24px; transform:translateX(-50%) translateY(20px);
+      background:#141414; border:1px solid #2a2a2a; color:var(--fg);
+      padding:10px 14px; border-radius:12px; box-shadow:0 10px 30px rgba(0,0,0,.35);
+      opacity:0; pointer-events:none; transition:all .25s ease; z-index:9999; font-size:14px;
+    }
+    .toast.show{ opacity:1; transform:translateX(-50%) translateY(0); }
+    .toast.ok{ border-color:#214a21; color:#d8f7d8 }
+    .toast.err{ border-color:#5a2a2a; color:#ffd7d7 }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="topbar">
+      <div class="brand">
+        <div class="logo"><img id="logoImg" src="https://static.wixstatic.com/media/de6cdb_1818e78bd1294722811849c73ea77774~mv2.png" alt="Luxura Logo"></div>
+        <div>
+          <div class="title">Luxura — Inventaire multi-salons</div>
+          <div class="muted">Interface noire & or • connectée à l’API Render</div>
+        </div>
+      </div>
+      <div class="muted">v1.2</div>
+    </div>
+
+    <!-- CONFIG -->
+    <div class="card" style="margin-bottom:16px;">
+      <div class="grid">
+        <div>
+          <label>URL de l’API</label>
+          <input id="apiUrl" value="https://luxura-inventory-api.onrender.com" oninput="saveCfg()" />
+        </div>
+        <div>
+          <label>Clé API (si utilisée)</label>
+          <input id="apiKey" placeholder="(laisser vide)" oninput="saveCfg()" />
+        </div>
+      </div>
+      <div class="toolbar" style="margin-top:10px;">
+        <button onclick="testApi()">Tester la connexion</button>
+        <button class="btn-ghost" onclick="refreshAll()">Rafraîchir données</button>
+        <span id="testStatus" class="muted"></span>
+      </div>
+    </div>
+
+    <!-- SALONS + PRODUITS -->
+    <div class="grid">
+      <div class="card">
+        <h3>Salons</h3>
+        <form class="toolbar" onsubmit="createSalon(event)">
+          <input id="salonName" placeholder="Nom du salon">
+          <input id="salonAddr" placeholder="Adresse">
+          <button>Ajouter</button>
+        </form>
+        <div id="salonsList" class="muted">Aucun salon…</div>
+      </div>
+      <div class="card">
+        <h3>Produits</h3>
+        <form class="toolbar" onsubmit="createProduct(event)">
+          <input id="prodSku" placeholder="SKU">
+          <input id="prodName" placeholder="Nom du produit">
+          <input id="prodLen" placeholder="Longueur (ex. 18)">
+          <input id="prodColor" placeholder="Couleur">
+          <input id="prodPrice" placeholder="Prix">
+          <button>Ajouter</button>
+        </form>
+        <div id="productsList" class="muted">Aucun produit…</div>
+      </div>
+    </div>
+
+    <!-- INVENTAIRE -->
+    <div class="card" style="margin-top:16px;">
+      <h3>Inventaire</h3>
+      <div class="toolbar">
+        <select id="filterSalon" onchange="loadInventory()"></select>
+        <select id="filterProduct" onchange="loadInventory()"></select>
+      </div>
+      <div id="inventoryTable" class="muted">Aucune donnée…</div>
+    </div>
+
+    <!-- MOUVEMENT + BOUTONS RAPIDES -->
+    <div class="card" style="margin-top:16px;">
+      <h3>Mouvement</h3>
+
+      <!-- Boutons rapides -->
+      <div class="toolbar" style="margin-bottom:8px;">
+        <button class="btn-ghost" onclick="quickType('IN')">➕ IN</button>
+        <button class="btn-ghost" onclick="quickType('OUT')">➖ OUT</button>
+        <button class="btn-ghost" onclick="quickType('SALE')">💸 SALE</button>
+        <button class="btn-ghost" onclick="quickType('ADJUST')">⚙️ ADJUST</button>
+        <span class="muted">Choisis un type puis entre la quantité</span>
+      </div>
+
+      <div class="grid">
+        <div><label>Type</label>
+          <select id="movType">
+            <option>IN</option>
+            <option>OUT</option>
+            <option>SALE</option>
+            <option>ADJUST</option>
+          </select>
+        </div>
+        <div><label>Salon</label><select id="movSalon"></select></div>
+        <div><label>Produit</label><select id="movProduct"></select></div>
+        <div><label>Quantité</label><input id="movQty" placeholder="ex. 5"></div>
+        <div style="grid-column:1/-1;"><label>Note</label><input id="movNote" placeholder="(optionnel)"></div>
+      </div>
+
+      <div class="toolbar" style="margin-top:10px;">
+        <button onclick="submitMovement()">Enregistrer</button>
+        <span id="movStatus" class="muted"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast container -->
+  <div id="toast" class="toast"></div>
+
+<script>
+/* ============ CFG & HELPERS ============ */
+function cfg(){return{apiUrl:localStorage.getItem('apiUrl')||document.getElementById('apiUrl').value,apiKey:localStorage.getItem('apiKey')||document.getElementById('apiKey').value}}
+function saveCfg(){localStorage.setItem('apiUrl',document.getElementById('apiUrl').value.trim());localStorage.setItem('apiKey',document.getElementById('apiKey').value.trim());}
+function headers(){const h={'Content-Type':'application/json'};const k=cfg().apiKey;if(k)h['x-api-key']=k;return h;}
+function setStatus(id,msg,ok=true){const el=document.getElementById(id);el.textContent=msg;el.className=(ok?'ok':'err')+' muted';}
+function val(id){return document.getElementById(id).value.trim();}
+function intOrNull(id){const v=parseInt(val(id)||'');return Number.isFinite(v)?v:null;}
+function floatOrNull(id){const v=parseFloat(val(id)||'');return Number.isFinite(v)?v:null;}
+function getParam(name){ return new URL(location.href).searchParams.get(name); }
+
+/* Toaster */
+let toastTimer=null;
+function toast(msg, ok=true){
+  const el=document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'toast '+(ok?'ok':'err');
+  void el.offsetWidth; // reflow
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=>{ el.classList.remove('show'); }, 2200);
+}
+
+async function testApi(){
+  try{
+    const r=await fetch(cfg().apiUrl+'/salons',{headers:headers()});
+    if(r.ok){ setStatus('testStatus','Connexion OK'); toast('Connexion API OK', true); }
+    else { setStatus('testStatus','Erreur '+r.status,false); toast('Erreur API '+r.status, false); }
+  }catch(e){ setStatus('testStatus','Impossible de joindre l’API',false); toast('Impossible de joindre l’API', false); }
+  refreshAll();
+}
+
+/* ============ CRUD SALONS ============ */
+async function createSalon(e){e.preventDefault();
+  const n=val('salonName'); if(!n) return;
+  const a=val('salonAddr');
+  const r=await fetch(cfg().apiUrl+'/salons',{method:'POST',headers:headers(),body:JSON.stringify({name:n,address:a})});
+  if(r.ok){
+    document.getElementById('salonName').value='';document.getElementById('salonAddr').value='';
+    toast('Salon ajouté', true); loadSalons();
+  } else { toast('Erreur ajout salon', false); }
+}
+async function loadSalons(){
+  const r=await fetch(cfg().apiUrl+'/salons',{headers:headers()}); const rows=r.ok?await r.json():[];
+  const opts=rows.map(s=>`<option value="${s.id}">${s.name}</option>`).join('');
+  for(const id of ['filterSalon','movSalon']) document.getElementById(id).innerHTML=`<option value="">— Salon —</option>`+opts;
+  document.getElementById('salonsList').innerHTML=rows.length
+    ? `<table><tr><th>ID</th><th>Nom</th><th>Adresse</th></tr>${rows.map(s=>`<tr><td>${s.id}</td><td>${s.name}</td><td>${s.address||''}</td></tr>`).join('')}</table>`
+    : '<div class="muted">Aucun salon…</div>';
+
+  // Pré-sélection du salon par défaut
+  const qpSalon = parseInt(getParam('salon_id')||'');
+  const defaultSalonId = Number.isFinite(qpSalon) ? qpSalon : (rows[0]?.id ?? null);
+  if (defaultSalonId){
+    const fs = document.getElementById('filterSalon');
+    const ms = document.getElementById('movSalon');
+    if (fs && !fs.value) fs.value = String(defaultSalonId);
+    if (ms && !ms.value) ms.value = String(defaultSalonId);
+  }
+}
+
+/* ============ CRUD PRODUITS ============ */
+async function createProduct(e){e.preventDefault();
+  const sku=val('prodSku'); const name=val('prodName'); if(!sku||!name) return;
+  const l=intOrNull('prodLen'); const c=val('prodColor')||null; const p=floatOrNull('prodPrice');
+  const r=await fetch(cfg().apiUrl+'/products',{method:'POST',headers:headers(),body:JSON.stringify({sku,name,length_inch:l,color:c,price:p})});
+  if(r.ok){
+    document.getElementById('prodSku').value='';document.getElementById('prodName').value='';
+    document.getElementById('prodLen').value='';document.getElementById('prodColor').value='';document.getElementById('prodPrice').value='';
+    toast('Produit ajouté', true); loadProducts();
+  } else { toast('Erreur ajout produit', false); }
+}
+async function loadProducts(){
+  const r=await fetch(cfg().apiUrl+'/products',{headers:headers()}); const rows=r.ok?await r.json():[];
+  const opts=rows.map(p=>`<option value="${p.id}">${p.sku} — ${p.name}</option>`).join('');
+  for(const id of ['filterProduct','movProduct']) document.getElementById(id).innerHTML=`<option value="">— Produit —</option>`+opts;
+
+  document.getElementById('productsList').innerHTML=rows.length
+    ? `<table><tr><th>ID</th><th>SKU</th><th>Nom</th><th>Long.</th><th>Couleur</th><th>Prix</th></tr>${rows.map(p=>`<tr><td>${p.id}</td><td>${p.sku}</td><td>${p.name}</td><td>${p.length_inch||''}</td><td>${p.color||''}</td><td>${p.price ?? ''}</td></tr>`).join('')}</table>`
+    : '<div class="muted">Aucun produit…</div>';
+
+  // Pré-sélection du produit via URL si fourni
+  const qpProd = parseInt(getParam('product_id')||'');
+  if (Number.isFinite(qpProd)){
+    const fp = document.getElementById('filterProduct');
+    const mp = document.getElementById('movProduct');
+    if (fp) fp.value = String(qpProd);
+    if (mp) mp.value = String(qpProd);
+  }
+}
+
+/* ============ INVENTAIRE ============ */
+async function loadInventory(){
+  const r=await fetch(cfg().apiUrl+'/inventory',{headers:headers()}); const rows=r.ok?await r.json():[];
+  const s=document.getElementById('filterSalon').value;
+  const p=document.getElementById('filterProduct').value;
+  const f=rows.filter(i=>(!s||i.salon_id==s)&&(!p||i.product_id==p));
+  document.getElementById('inventoryTable').innerHTML=f.length
+    ? `<table><tr><th>Salon</th><th>Produit</th><th>Quantité</th></tr>${f.map(i=>`<tr><td>${i.salon_id}</td><td>${i.product_id}</td><td>${i.quantity}</td></tr>`).join('')}</table>`
+    : '<div class="muted">Aucune donnée…</div>';
+}
+
+/* ============ MOUVEMENTS ============ */
+function quickType(t){
+  const sel=document.getElementById('movType'); if(sel) sel.value=t;
+  const qty=document.getElementById('movQty'); if(qty){ qty.focus(); qty.select(); }
+  setStatus('movStatus','Type sélectionné : '+t,true);
+  toast('Type : '+t, true);
+}
+// Raccourcis clavier : i (IN), o (OUT), s (SALE), a (ADJUST)
+document.addEventListener('keydown',(e)=>{
+  if(['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName)) return;
+  const map={i:'IN',o:'OUT',s:'SALE',a:'ADJUST'};
+  const t=map[e.key?.toLowerCase()]; if(t){ e.preventDefault(); quickType(t); }
+});
+
+async function submitMovement(){
+  const type=document.getElementById('movType').value.trim();
+  const salon_id=parseInt(document.getElementById('movSalon').value||'');
+  const product_id=parseInt(document.getElementById('movProduct').value||'');
+  const qty=parseInt(document.getElementById('movQty').value||'');
+  const note=val('movNote');
+  if(!type||!Number.isInteger(salon_id)||!Number.isInteger(product_id)||!Number.isInteger(qty)){
+    setStatus('movStatus','Champs invalides (IDs/qty = entiers).',false); toast('Champs invalides', false); return;
+  }
+  const url=new URL(cfg().apiUrl+'/movement');
+  url.searchParams.set('type',type);
+  url.searchParams.set('salon_id',salon_id);
+  url.searchParams.set('product_id',product_id);
+  url.searchParams.set('qty',qty);
+  if(note) url.searchParams.set('note',note);
+  try{
+    const r=await fetch(url.toString(),{method:'POST',headers:headers()});
+    if(r.ok){
+      setStatus('movStatus','Mouvement enregistré'); document.getElementById('movQty').value='';
+      toast('Mouvement enregistré', true);
+      loadInventory();
+    } else {
+      const t=await r.text(); setStatus('movStatus','Erreur '+r.status+': '+t,false);
+      toast('Erreur '+r.status, false);
+    }
+  }catch(e){
+    setStatus('movStatus','Impossible de joindre l’API',false);
+    toast('Impossible de joindre l’API', false);
+  }
+}
+
+/* ============ BOOT ============ */
+async function refreshAll(){await loadSalons();await loadProducts();await loadInventory();}
+(function init(){
+  // Valeurs par défaut (API & Logo) si rien n'est stocké
+  const DEFAULT_API="https://luxura-inventory-api.onrender.com";
+  const DEFAULT_LOGO="https://static.wixstatic.com/media/de6cdb_1818e78bd1294722811849c73ea77774~mv2.png";
+  if(!localStorage.getItem('apiUrl')){ localStorage.setItem('apiUrl',DEFAULT_API); document.getElementById('apiUrl').value=DEFAULT_API; }
+  if(!localStorage.getItem('logoUrl')){ localStorage.setItem('logoUrl',DEFAULT_LOGO); }
+  const img=document.getElementById('logoImg'); if(img) img.src = localStorage.getItem('logoUrl') || DEFAULT_LOGO;
+
+  refreshAll();
+})();
+</script>
+</body>
+</html>
