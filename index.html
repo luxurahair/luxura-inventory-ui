@@ -137,6 +137,10 @@
         <select id="filterProduct" onchange="loadInventory()"></select>
       </div>
       <div id="inventoryTable" class="muted">Aucune donnée…</div>
+
+      <div id="actionLog" class="muted" style="margin-top:10px; max-height:160px; overflow:auto; border:1px solid var(--line); border-radius:12px; padding:10px; background:#0d0d0d">
+        <div class="muted">Logs: prêt.</div>
+      </div>
     </div>
 
     <!-- MOUVEMENTS -->
@@ -220,6 +224,16 @@ function toast(msg, ok=true){
   setTimeout(()=>el.classList.remove("show"),2000);
 }
 
+function logLine(msg){
+  const el=document.getElementById('actionLog');
+  if(!el) return;
+  const t=new Date();
+  const stamp=t.toLocaleString('fr-CA');
+  const line=document.createElement('div');
+  line.textContent=`[${stamp}] ${msg}`;
+  el.prepend(line);
+}
+
 /* =========================
          API TEST
 ========================= */
@@ -230,13 +244,16 @@ async function testApi(){
     if(r.ok){
       setStatus("testStatus","Connexion OK");
       toast("Connexion OK",true);
+      logLine("Connexion API OK");
     } else {
       setStatus("testStatus","Erreur "+r.status,false);
       toast("Erreur "+r.status,false);
+      logLine("Connexion API FAIL HTTP "+r.status);
     }
   }catch(e){
     setStatus("testStatus","Impossible de joindre l’API",false);
     toast("Impossible de joindre l’API",false);
+    logLine("Impossible de joindre l’API");
   }
   refreshAll();
 }
@@ -252,16 +269,16 @@ async function createSalon(e){e.preventDefault();
     method:"POST",headers:headers(),
     body:JSON.stringify({name:n,address:a})
   });
-  if(r.ok){ toast("Salon ajouté",true); loadSalons(); }
-  else{ toast("Erreur ajout salon",false); }
+  if(r.ok){ toast("Salon ajouté",true); logLine("Salon ajouté: "+n); loadSalons(); }
+  else{ toast("Erreur ajout salon",false); logLine("Erreur ajout salon: HTTP "+r.status); }
 }
 
 async function loadSalons(){
   const r=await fetch(cfg().apiUrl+"/salons",{headers:headers()});
   const rows=r.ok?await r.json():[];
   const opts=rows.map(s=>`<option value="${s.id}">${s.name}</option>`).join("");
-  document.getElementById("filterSalon").innerHTML=`<option value="">— Salon —</option>`+opts;
-  document.getElementById("movSalon").innerHTML=`<option value="">— Salon —</option>`+opts;
+  document.getElementById("filterSalon").innerHTML=`<option value="">— Tous les salons —</option>`+opts;
+  document.getElementById("movSalon").innerHTML=`<option value="">— Tous les salons —</option>`+opts;
 
   document.getElementById("salonsList").innerHTML = rows.length
     ? `<table><tr><th>ID</th><th>Nom</th><th>Adresse</th></tr>${
@@ -291,8 +308,8 @@ async function createProduct(e){e.preventDefault();
     body:JSON.stringify(payload)
   });
 
-  if(r.ok){ toast("Produit ajouté",true); loadProducts(); }
-  else{ toast("Erreur ajout produit",false); }
+  if(r.ok){ toast("Produit ajouté",true); logLine("Produit ajouté: "+sku+" — "+name); loadProducts(); }
+  else{ toast("Erreur ajout produit",false); logLine("Erreur ajout produit: HTTP "+r.status); }
 }
 
 async function loadProducts(){
@@ -300,8 +317,8 @@ async function loadProducts(){
   const rows=r.ok?await r.json():[];
 
   const opts=rows.map(p=>`<option value="${p.id}">${p.sku} — ${p.name}</option>`).join("");
-  document.getElementById("filterProduct").innerHTML=`<option value="">— Produit —</option>`+opts;
-  document.getElementById("movProduct").innerHTML=`<option value="">— Produit —</option>`+opts;
+  document.getElementById("filterProduct").innerHTML=`<option value="">— Tous les produits —</option>`+opts;
+  document.getElementById("movProduct").innerHTML=`<option value="">— Tous les produits —</option>`+opts;
 
   document.getElementById("productsList").innerHTML = rows.length
     ? `<table><tr><th>ID</th><th>SKU</th><th>Nom</th><th>Long.</th><th>Couleur</th><th>Prix</th></tr>${
@@ -311,22 +328,37 @@ async function loadProducts(){
 }
 
 /* =========================
-         INVENTAIRE
+         INVENTAIRE (MULTI-SALON CLEAN)
 ========================= */
 async function loadInventory(){
-  const r=await fetch(cfg().apiUrl+"/inventory",{headers:headers()});
+  const s=document.getElementById('filterSalon').value;
+  const p=document.getElementById('filterProduct').value;
+
+  const url=new URL(cfg().apiUrl+"/inventory/view");
+  if(s) url.searchParams.set('salon_id', s);
+  if(p) url.searchParams.set('product_id', p);
+
+  const r=await fetch(url.toString(),{headers:headers()});
   const rows=r.ok?await r.json():[];
 
-  const s=document.getElementById("filterSalon").value;
-  const p=document.getElementById("filterProduct").value;
-
-  const f=rows.filter(i => (!s||i.salon_id==s)&&(!p||i.product_id==p));
-
-  document.getElementById("inventoryTable").innerHTML=f.length
-    ? `<table><tr><th>Salon</th><th>Produit</th><th>Quantité</th></tr>${
-        f.map(i=>`<tr><td>${i.salon_id}</td><td>${i.product_id}</td><td>${i.quantity}</td></tr>`).join("")
-      }</table>`
+  document.getElementById('inventoryTable').innerHTML = rows.length
+    ? `<table>
+        <tr>
+          <th>Salon</th><th>SKU</th><th>Produit</th><th>Qté</th><th>Actif</th><th>Wix</th>
+        </tr>
+        ${rows.map(i=>`<tr>
+          <td>${i.salon_id}</td>
+          <td>${i.sku||''}</td>
+          <td>${i.name||''}</td>
+          <td>${(i.quantity ?? 0)}</td>
+          <td>${i.is_active===null?'':(i.is_active?'✅':'❌')}</td>
+          <td>${i.wix_id||''}</td>
+        </tr>`).join('')}
+      </table>`
     : "<div class='muted'>Aucune donnée…</div>";
+
+  if(r.ok) logLine(`Inventaire chargé (${rows.length} lignes)${s?` • salon ${s}`:''}${p?` • produit ${p}`:''}`);
+  else logLine(`Erreur inventaire: HTTP ${r.status}`);
 }
 
 /* =========================
@@ -336,6 +368,7 @@ function quickType(t){
   document.getElementById("movType").value=t;
   document.getElementById("movQty").focus();
   toast("Type "+t,true);
+  logLine("Type mouvement: "+t);
 }
 
 async function submitMovement(){
@@ -347,6 +380,7 @@ async function submitMovement(){
 
   if(!type||!salon_id||!product_id||!qty){
     toast("Champs invalides",false);
+    logLine("Mouvement refusé: champs invalides");
     return;
   }
 
@@ -361,10 +395,12 @@ async function submitMovement(){
 
   if(r.ok){
     toast("Mouvement enregistré",true);
+    logLine(`Mouvement OK: ${type} • salon ${salon_id} • prod ${product_id} • qty ${qty}${note?` • note: ${note}`:''}`);
     document.getElementById("movQty").value="";
     loadInventory();
   } else {
     toast("Erreur "+r.status,false);
+    logLine("Mouvement FAIL HTTP "+r.status);
   }
 }
 
@@ -374,14 +410,11 @@ async function submitMovement(){
 async function refreshAll(){await loadSalons();await loadProducts();await loadInventory();}
 
 (function init(){
-  // Valeur API par défaut si vide
   if(!localStorage.getItem("apiUrl")){
     localStorage.setItem("apiUrl","https://luxura-inventory-api.onrender.com");
   }
   document.getElementById("apiUrl").value = localStorage.getItem("apiUrl");
-
   document.getElementById("apiKey").value = localStorage.getItem("apiKey") || "";
-
   refreshAll();
 })();
 </script>
