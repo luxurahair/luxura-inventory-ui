@@ -235,25 +235,55 @@ function logLine(msg){
 }
 
 /* =========================
+        WIX BRIDGE (postMessage RPC)
+========================= */
+const WixBridge = (() => {
+  const pending = new Map();
+
+  window.addEventListener("message", (ev) => {
+    const msg = ev.data || {};
+    if (!msg.id || !pending.has(msg.id)) return;
+
+    const { resolve, reject } = pending.get(msg.id);
+    pending.delete(msg.id);
+
+    if (msg.ok) resolve(msg.data);
+    else reject(new Error(msg.error || "Unknown error"));
+  });
+
+  function call(action, payload) {
+    const id = `${Date.now()}_${Math.random().toString(16).slice(2)}`;
+    return new Promise((resolve, reject) => {
+      pending.set(id, { resolve, reject });
+
+      // on envoie au parent Wix
+      window.parent.postMessage({ id, action, payload }, "*");
+
+      setTimeout(() => {
+        if (!pending.has(id)) return;
+        pending.delete(id);
+        reject(new Error("Timeout WixBridge"));
+      }, 15000);
+    });
+  }
+
+  return { call };
+})();
+
+/* =========================
          API TEST
 ========================= */
 async function testApi(){
-  const {apiUrl} = cfg();
-  try{
-    const r = await fetch(apiUrl+"/salons",{headers:headers()});
-    if(r.ok){
-      setStatus("testStatus","Connexion OK");
-      toast("Connexion OK",true);
-      logLine("Connexion API OK");
-    } else {
-      setStatus("testStatus","Erreur "+r.status,false);
-      toast("Erreur "+r.status,false);
-      logLine("Connexion API FAIL HTTP "+r.status);
-    }
-  }catch(e){
+  try {
+    const res = await WixBridge.call("ping");
+    setStatus("testStatus", "Connexion OK");
+    toast("Connexion OK", true);
+    logLine("Bridge OK: " + JSON.stringify(res));
+  } catch (e) {
+    console.log("BRIDGE ERROR:", e);
     setStatus("testStatus","Impossible de joindre l’API",false);
     toast("Impossible de joindre l’API",false);
-    logLine("Impossible de joindre l’API");
+    logLine("Bridge FAIL: " + (e?.message || e));
   }
   refreshAll();
 }
@@ -274,11 +304,11 @@ async function createSalon(e){e.preventDefault();
 }
 
 async function loadSalons(){
-  const r=await fetch(cfg().apiUrl+"/salons",{headers:headers()});
-  const rows=r.ok?await r.json():[];
-  const opts=rows.map(s=>`<option value="${s.id}">${s.name}</option>`).join("");
-  document.getElementById("filterSalon").innerHTML=`<option value="">— Tous les salons —</option>`+opts;
-  document.getElementById("movSalon").innerHTML=`<option value="">— Tous les salons —</option>`+opts;
+  const rows = await WixBridge.call("getSalons");
+
+  const opts = rows.map(s => `<option value="${s.id}">${s.name}</option>`).join("");
+  document.getElementById("filterSalon").innerHTML = `<option value="">— Tous les salons —</option>` + opts;
+  document.getElementById("movSalon").innerHTML   = `<option value="">— Tous les salons —</option>` + opts;
 
   document.getElementById("salonsList").innerHTML = rows.length
     ? `<table><tr><th>ID</th><th>Nom</th><th>Adresse</th></tr>${
@@ -313,12 +343,11 @@ async function createProduct(e){e.preventDefault();
 }
 
 async function loadProducts(){
-  const r=await fetch(cfg().apiUrl+"/products",{headers:headers()});
-  const rows=r.ok?await r.json():[];
+  const rows = await WixBridge.call("getProducts");
 
-  const opts=rows.map(p=>`<option value="${p.id}">${p.sku} — ${p.name}</option>`).join("");
-  document.getElementById("filterProduct").innerHTML=`<option value="">— Tous les produits —</option>`+opts;
-  document.getElementById("movProduct").innerHTML=`<option value="">— Tous les produits —</option>`+opts;
+  const opts = rows.map(p => `<option value="${p.id}">${p.sku} — ${p.name}</option>`).join("");
+  document.getElementById("filterProduct").innerHTML = `<option value="">— Tous les produits —</option>` + opts;
+  document.getElementById("movProduct").innerHTML    = `<option value="">— Tous les produits —</option>` + opts;
 
   document.getElementById("productsList").innerHTML = rows.length
     ? `<table><tr><th>ID</th><th>SKU</th><th>Nom</th><th>Long.</th><th>Couleur</th><th>Prix</th></tr>${
@@ -331,15 +360,13 @@ async function loadProducts(){
          INVENTAIRE (MULTI-SALON CLEAN)
 ========================= */
 async function loadInventory(){
-  const s=document.getElementById('filterSalon').value;
-  const p=document.getElementById('filterProduct').value;
+  const s = document.getElementById('filterSalon').value;
+  const p = document.getElementById('filterProduct').value;
 
-  const url=new URL(cfg().apiUrl+"/inventory/view");
-  if(s) url.searchParams.set('salon_id', s);
-  if(p) url.searchParams.set('product_id', p);
-
-  const r=await fetch(url.toString(),{headers:headers()});
-  const rows=r.ok?await r.json():[];
+  const rows = await WixBridge.call("getInventoryView", {
+    salon_id: s || "",
+    product_id: p || ""
+  });
 
   document.getElementById('inventoryTable').innerHTML = rows.length
     ? `<table>
@@ -357,8 +384,7 @@ async function loadInventory(){
       </table>`
     : "<div class='muted'>Aucune donnée…</div>";
 
-  if(r.ok) logLine(`Inventaire chargé (${rows.length} lignes)${s?` • salon ${s}`:''}${p?` • produit ${p}`:''}`);
-  else logLine(`Erreur inventaire: HTTP ${r.status}`);
+  logLine(`Inventaire chargé (${rows.length} lignes)${s?` • salon ${s}`:''}${p?` • produit ${p}`:''}`);
 }
 
 /* =========================
@@ -413,8 +439,15 @@ async function refreshAll(){await loadSalons();await loadProducts();await loadIn
   if(!localStorage.getItem("apiUrl")){
     localStorage.setItem("apiUrl","https://luxura-inventory-api.onrender.com");
   }
+
   document.getElementById("apiUrl").value = localStorage.getItem("apiUrl");
   document.getElementById("apiKey").value = localStorage.getItem("apiKey") || "";
+
+  // ✅ Désactive parce qu'on passe par Wix Proxy (postMessage)
+  document.getElementById("apiUrl").disabled = true;
+  document.getElementById("apiKey").disabled = true;
+  document.getElementById("apiUrl").value = "Wix Proxy (postMessage)";
+
   refreshAll();
 })();
 </script>
