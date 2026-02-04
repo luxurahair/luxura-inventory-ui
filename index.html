@@ -291,69 +291,59 @@ async function testApi(){
 /* =========================
          CRUD SALONS
 ========================= */
-async function createSalon(e){e.preventDefault();
-  const n=document.getElementById("salonName").value.trim();
-  const a=document.getElementById("salonAddr").value.trim();
-  if(!n) return;
-  const r=await fetch(cfg().apiUrl+"/salons",{
-    method:"POST",headers:headers(),
-    body:JSON.stringify({name:n,address:a})
-  });
-  if(r.ok){ toast("Salon ajouté",true); logLine("Salon ajouté: "+n); loadSalons(); }
-  else{ toast("Erreur ajout salon",false); logLine("Erreur ajout salon: HTTP "+r.status); }
-}
+async function createSalon(e){
+  e.preventDefault();
+  const n = document.getElementById("salonName").value.trim();
+  const a = document.getElementById("salonAddr").value.trim();
+  if (!n) return;
 
-async function loadSalons(){
-  const rows = await WixBridge.call("getSalons");
-
-  const opts = rows.map(s => `<option value="${s.id}">${s.name}</option>`).join("");
-  document.getElementById("filterSalon").innerHTML = `<option value="">— Tous les salons —</option>` + opts;
-  document.getElementById("movSalon").innerHTML   = `<option value="">— Tous les salons —</option>` + opts;
-
-  document.getElementById("salonsList").innerHTML = rows.length
-    ? `<table><tr><th>ID</th><th>Nom</th><th>Adresse</th></tr>${
-        rows.map(s=>`<tr><td>${s.id}</td><td>${s.name}</td><td>${s.address||""}</td></tr>`).join("")
-      }</table>`
-    : "<div class='muted'>Aucun salon…</div>";
+  try {
+    await WixBridge.call("createSalon", { name: n, address: a });
+    toast("Salon ajouté", true);
+    logLine("Salon ajouté: " + n);
+    document.getElementById("salonName").value = "";
+    document.getElementById("salonAddr").value = "";
+    await loadSalons();
+  } catch (e) {
+    toast("Erreur ajout salon", false);
+    logLine("Erreur ajout salon: " + (e?.message || e));
+  }
 }
 
 /* =========================
         CRUD PRODUITS
 ========================= */
-async function createProduct(e){e.preventDefault();
-  const sku=document.getElementById("prodSku").value.trim();
-  const name=document.getElementById("prodName").value.trim();
-  if(!sku||!name) return;
+async function createProduct(e){
+  e.preventDefault();
 
-  const payload={
+  const sku = document.getElementById("prodSku").value.trim();
+  const name = document.getElementById("prodName").value.trim();
+  if (!sku || !name) return;
+
+  const payload = {
     sku,
     name,
-    length_inch:parseInt(document.getElementById("prodLen").value)||null,
-    color:document.getElementById("prodColor").value.trim()||null,
-    price:parseFloat(document.getElementById("prodPrice").value)||null
+    length_inch: parseInt(document.getElementById("prodLen").value) || null,
+    color: document.getElementById("prodColor").value.trim() || null,
+    price: parseFloat(document.getElementById("prodPrice").value) || null
   };
 
-  const r=await fetch(cfg().apiUrl+"/products",{
-    method:"POST",headers:headers(),
-    body:JSON.stringify(payload)
-  });
+  try {
+    await WixBridge.call("createProduct", payload);
+    toast("Produit ajouté", true);
+    logLine("Produit ajouté: " + sku + " — " + name);
 
-  if(r.ok){ toast("Produit ajouté",true); logLine("Produit ajouté: "+sku+" — "+name); loadProducts(); }
-  else{ toast("Erreur ajout produit",false); logLine("Erreur ajout produit: HTTP "+r.status); }
-}
+    document.getElementById("prodSku").value = "";
+    document.getElementById("prodName").value = "";
+    document.getElementById("prodLen").value = "";
+    document.getElementById("prodColor").value = "";
+    document.getElementById("prodPrice").value = "";
 
-async function loadProducts(){
-  const rows = await WixBridge.call("getProducts");
-
-  const opts = rows.map(p => `<option value="${p.id}">${p.sku} — ${p.name}</option>`).join("");
-  document.getElementById("filterProduct").innerHTML = `<option value="">— Tous les produits —</option>` + opts;
-  document.getElementById("movProduct").innerHTML    = `<option value="">— Tous les produits —</option>` + opts;
-
-  document.getElementById("productsList").innerHTML = rows.length
-    ? `<table><tr><th>ID</th><th>SKU</th><th>Nom</th><th>Long.</th><th>Couleur</th><th>Prix</th></tr>${
-        rows.map(p=>`<tr><td>${p.id}</td><td>${p.sku}</td><td>${p.name}</td><td>${p.length_inch||""}</td><td>${p.color||""}</td><td>${p.price||""}</td></tr>`).join("")
-      }</table>`
-    : "<div class='muted'>Aucun produit…</div>";
+    await loadProducts();
+  } catch (e) {
+    toast("Erreur ajout produit", false);
+    logLine("Erreur ajout produit: " + (e?.message || e));
+  }
 }
 
 /* =========================
@@ -398,35 +388,27 @@ function quickType(t){
 }
 
 async function submitMovement(){
-  const type=document.getElementById("movType").value.trim();
-  const salon_id=parseInt(document.getElementById("movSalon").value);
-  const product_id=parseInt(document.getElementById("movProduct").value);
-  const qty=parseInt(document.getElementById("movQty").value);
-  const note=document.getElementById("movNote").value.trim();
+  const type = document.getElementById("movType").value.trim();
+  const salon_id = parseInt(document.getElementById("movSalon").value);
+  const product_id = parseInt(document.getElementById("movProduct").value);
+  const qty = parseInt(document.getElementById("movQty").value);
+  const note = document.getElementById("movNote").value.trim();
 
-  if(!type||!salon_id||!product_id||!qty){
-    toast("Champs invalides",false);
+  if(!type || !salon_id || !product_id || !qty){
+    toast("Champs invalides", false);
     logLine("Mouvement refusé: champs invalides");
     return;
   }
 
-  const url=new URL(cfg().apiUrl+"/movement");
-  url.searchParams.set("type",type);
-  url.searchParams.set("salon_id",salon_id);
-  url.searchParams.set("product_id",product_id);
-  url.searchParams.set("qty",qty);
-  if(note) url.searchParams.set("note",note);
-
-  const r=await fetch(url.toString(),{method:"POST",headers:headers()});
-
-  if(r.ok){
-    toast("Mouvement enregistré",true);
+  try {
+    await WixBridge.call("submitMovement", { type, salon_id, product_id, qty, note });
+    toast("Mouvement enregistré", true);
     logLine(`Mouvement OK: ${type} • salon ${salon_id} • prod ${product_id} • qty ${qty}${note?` • note: ${note}`:''}`);
-    document.getElementById("movQty").value="";
-    loadInventory();
-  } else {
-    toast("Erreur "+r.status,false);
-    logLine("Mouvement FAIL HTTP "+r.status);
+    document.getElementById("movQty").value = "";
+    await loadInventory();
+  } catch (e) {
+    toast("Erreur mouvement", false);
+    logLine("Mouvement FAIL: " + (e?.message || e));
   }
 }
 
