@@ -60,11 +60,32 @@
       background:#141414;border:1px solid #2a2a2a;color:var(--fg);
       padding:10px 14px;border-radius:12px;
       box-shadow:0 10px 30px rgba(0,0,0,.35);
-      opacity:0; pointer-events:none; transition:.25s; z-index:9999; 
+      opacity:0; pointer-events:none; transition:.25s; z-index:9999;
     }
     .toast.show{opacity:1; transform:translateX(-50%) translateY(0);}
     .toast.ok{border-color:#214a21;color:#d8f7d8}
     .toast.err{border-color:#5a2a2a;color:#ffd7d7}
+
+    /* =========================
+       INVENTAIRE: SCROLL FIXE
+    ========================= */
+    #inventoryWrap{
+      max-height: 420px;        /* ~10 lignes visibles */
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background:#0d0d0d;
+      margin-top: 10px;
+    }
+    #inventoryWrap thead th{
+      position: sticky;
+      top: 0;
+      background: #0d0d0d;
+      z-index: 2;
+    }
+    #inventoryWrap th, #inventoryWrap td{
+      padding: 8px;
+    }
   </style>
 </head>
 
@@ -136,7 +157,10 @@
         <select id="filterSalon" onchange="loadInventory()"></select>
         <select id="filterProduct" onchange="loadInventory()"></select>
       </div>
-      <div id="inventoryTable" class="muted">Aucune donnée…</div>
+
+      <div id="inventoryWrap">
+        <div id="inventoryTable" class="muted">Aucune donnée…</div>
+      </div>
 
       <div id="actionLog" class="muted" style="margin-top:10px; max-height:160px; overflow:auto; border:1px solid var(--line); border-radius:12px; padding:10px; background:#0d0d0d">
         <div class="muted">Logs: prêt.</div>
@@ -176,21 +200,13 @@
   <div id="toast" class="toast"></div>
 
 <script>
-/* =========================
-   CONFIG + URL CLEANER
-========================= */
 function cfg() {
   let api = document.getElementById("apiUrl").value.trim();
-
-  // Valeur par défaut
   if (!api) api = "https://luxura-inventory-api.onrender.com";
-
-  // Nettoyage : garder juste le domaine
   try {
     const u = new URL(api);
     api = u.origin;
   } catch (e) {}
-
   document.getElementById("apiUrl").value = api;
   localStorage.setItem("apiUrl", api);
 
@@ -199,22 +215,18 @@ function cfg() {
 
   return { apiUrl: api, apiKey };
 }
-
 function saveCfg() { cfg(); }
-
 function headers() {
   const h = { "Content-Type": "application/json" };
   const k = localStorage.getItem("apiKey");
   if (k) h["x-api-key"] = k;
   return h;
 }
-
 function setStatus(id,msg,ok=true){
   const el=document.getElementById(id);
   el.textContent=msg;
   el.className=(ok?"ok":"err")+" muted";
 }
-
 function toast(msg, ok=true){
   const el=document.getElementById("toast");
   el.textContent=msg;
@@ -223,7 +235,6 @@ function toast(msg, ok=true){
   el.classList.add("show");
   setTimeout(()=>el.classList.remove("show"),2000);
 }
-
 function logLine(msg){
   const el=document.getElementById('actionLog');
   if(!el) return;
@@ -234,9 +245,6 @@ function logLine(msg){
   el.prepend(line);
 }
 
-/* =========================
-        WIX BRIDGE (postMessage RPC)
-========================= */
 const WixBridge = (() => {
   const pending = new Map();
 
@@ -255,10 +263,7 @@ const WixBridge = (() => {
     const id = `${Date.now()}_${Math.random().toString(16).slice(2)}`;
     return new Promise((resolve, reject) => {
       pending.set(id, { resolve, reject });
-
-      // on envoie au parent Wix
       window.parent.postMessage({ id, action, payload }, "*");
-
       setTimeout(() => {
         if (!pending.has(id)) return;
         pending.delete(id);
@@ -270,9 +275,6 @@ const WixBridge = (() => {
   return { call };
 })();
 
-/* =========================
-         API TEST
-========================= */
 async function testApi(){
   try {
     const res = await WixBridge.call("ping");
@@ -288,9 +290,6 @@ async function testApi(){
   refreshAll();
 }
 
-/* =========================
-         CRUD SALONS
-========================= */
 async function createSalon(e){
   e.preventDefault();
   const n = document.getElementById("salonName").value.trim();
@@ -310,12 +309,8 @@ async function createSalon(e){
   }
 }
 
-/* =========================
-        CRUD PRODUITS
-========================= */
 async function createProduct(e){
   e.preventDefault();
-
   const sku = document.getElementById("prodSku").value.trim();
   const name = document.getElementById("prodName").value.trim();
   if (!sku || !name) return;
@@ -346,9 +341,50 @@ async function createProduct(e){
   }
 }
 
-/* =========================
-         INVENTAIRE (MULTI-SALON CLEAN)
-========================= */
+async function loadSalons(){
+  try {
+    const rows = await WixBridge.call("getSalons");
+
+    const opts = rows.map(s => `<option value="${s.id}">${s.name}</option>`).join("");
+    document.getElementById("filterSalon").innerHTML = `<option value="">— Tous les salons —</option>` + opts;
+    document.getElementById("movSalon").innerHTML   = `<option value="">— Tous les salons —</option>` + opts;
+
+    document.getElementById("salonsList").innerHTML = rows.length
+      ? `<table><tr><th>ID</th><th>Nom</th><th>Adresse</th></tr>${
+          rows.map(s=>`<tr><td>${s.id}</td><td>${s.name}</td><td>${s.address||""}</td></tr>`).join("")
+        }</table>`
+      : "<div class='muted'>Aucun salon…</div>";
+
+    logLine(`Salons chargés: ${rows.length}`);
+  } catch (e) {
+    toast("Erreur salons", false);
+    logLine("❌ getSalons FAIL: " + (e?.message || e));
+    document.getElementById("salonsList").innerHTML = "<div class='muted'>❌ Erreur salons</div>";
+  }
+}
+
+async function loadProducts(){
+  try {
+    const rows = await WixBridge.call("getProducts");
+
+    const opts = rows.map(p => `<option value="${p.id}">${p.sku} — ${p.name}</option>`).join("");
+    document.getElementById("filterProduct").innerHTML = `<option value="">— Tous les produits —</option>` + opts;
+    document.getElementById("movProduct").innerHTML    = `<option value="">— Tous les produits —</option>` + opts;
+
+    document.getElementById("productsList").innerHTML = rows.length
+      ? `<table><tr><th>ID</th><th>SKU</th><th>Nom</th><th>Long.</th><th>Couleur</th><th>Prix</th></tr>${
+          rows.map(p=>`<tr><td>${p.id}</td><td>${p.sku}</td><td>${p.name}</td><td>${p.length_inch||""}</td><td>${p.color||""}</td><td>${p.price||""}</td></tr>`).join("")
+        }</table>`
+      : "<div class='muted'>Aucun produit…</div>";
+
+    logLine(`Produits chargés: ${rows.length}`);
+  } catch (e) {
+    toast("Erreur produits", false);
+    logLine("❌ getProducts FAIL: " + (e?.message || e));
+    document.getElementById("productsList").innerHTML = "<div class='muted'>❌ Erreur produits</div>";
+  }
+}
+
 async function loadInventory(){
   const s = document.getElementById('filterSalon').value;
   const p = document.getElementById('filterProduct').value;
@@ -360,26 +396,27 @@ async function loadInventory(){
 
   document.getElementById('inventoryTable').innerHTML = rows.length
     ? `<table>
-        <tr>
-          <th>Salon</th><th>SKU</th><th>Produit</th><th>Qté</th><th>Actif</th><th>Wix</th>
-        </tr>
-        ${rows.map(i=>`<tr>
-          <td>${i.salon_id}</td>
-          <td>${i.sku||''}</td>
-          <td>${i.name||''}</td>
-          <td>${(i.quantity ?? 0)}</td>
-          <td>${i.is_active===null?'':(i.is_active?'✅':'❌')}</td>
-          <td>${i.wix_id||''}</td>
-        </tr>`).join('')}
+        <thead>
+          <tr>
+            <th>Salon</th><th>SKU</th><th>Produit</th><th>Qté</th><th>Actif</th><th>Wix</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map(i=>`<tr>
+            <td>${i.salon_id}</td>
+            <td>${i.sku||''}</td>
+            <td>${i.name||''}</td>
+            <td>${(i.quantity ?? 0)}</td>
+            <td>${i.is_active===null?'':(i.is_active?'✅':'❌')}</td>
+            <td>${i.wix_id||''}</td>
+          </tr>`).join('')}
+        </tbody>
       </table>`
     : "<div class='muted'>Aucune donnée…</div>";
 
   logLine(`Inventaire chargé (${rows.length} lignes)${s?` • salon ${s}`:''}${p?` • produit ${p}`:''}`);
 }
 
-/* =========================
-        MOUVEMENTS
-========================= */
 function quickType(t){
   document.getElementById("movType").value=t;
   document.getElementById("movQty").focus();
@@ -412,64 +449,19 @@ async function submitMovement(){
   }
 }
 
-async function loadSalons(){
-  try {
-    const rows = await WixBridge.call("getSalons");
-
-    const opts = rows.map(s => `<option value="${s.id}">${s.name}</option>`).join("");
-    document.getElementById("filterSalon").innerHTML = `<option value="">— Tous les salons —</option>` + opts;
-    document.getElementById("movSalon").innerHTML   = `<option value="">— Tous les salons —</option>` + opts;
-
-    document.getElementById("salonsList").innerHTML = rows.length
-      ? `<table><tr><th>ID</th><th>Nom</th><th>Adresse</th></tr>${
-          rows.map(s=>`<tr><td>${s.id}</td><td>${s.name}</td><td>${s.address||""}</td></tr>`).join("")
-        }</table>`
-      : "<div class='muted'>Aucun salon…</div>";
-
-    logLine(`Salons chargés: ${rows.length}`);
-  } catch (e) {
-    toast("Erreur salons", false);
-    logLine("❌ getSalons FAIL: " + (e?.message || e));
-    document.getElementById("salonsList").innerHTML = "<div class='muted'>❌ Erreur salons</div>";
-  }
+async function refreshAll(){
+  await loadSalons();
+  await loadProducts();
+  await loadInventory();
 }
-
- async function loadProducts(){
-  try {
-    const rows = await WixBridge.call("getProducts");
-
-    const opts = rows.map(p => `<option value="${p.id}">${p.sku} — ${p.name}</option>`).join("");
-    document.getElementById("filterProduct").innerHTML = `<option value="">— Tous les produits —</option>` + opts;
-    document.getElementById("movProduct").innerHTML    = `<option value="">— Tous les produits —</option>` + opts;
-
-    document.getElementById("productsList").innerHTML = rows.length
-      ? `<table><tr><th>ID</th><th>SKU</th><th>Nom</th><th>Long.</th><th>Couleur</th><th>Prix</th></tr>${
-          rows.map(p=>`<tr><td>${p.id}</td><td>${p.sku}</td><td>${p.name}</td><td>${p.length_inch||""}</td><td>${p.color||""}</td><td>${p.price||""}</td></tr>`).join("")
-        }</table>`
-      : "<div class='muted'>Aucun produit…</div>";
-
-    logLine(`Produits chargés: ${rows.length}`);
-  } catch (e) {
-    toast("Erreur produits", false);
-    logLine("❌ getProducts FAIL: " + (e?.message || e));
-    document.getElementById("productsList").innerHTML = "<div class='muted'>❌ Erreur produits</div>";
-  }
-}
- 
-/* =========================
-           INIT
-========================= */
-async function refreshAll(){await loadSalons();await loadProducts();await loadInventory();}
 
 (function init(){
   if(!localStorage.getItem("apiUrl")){
     localStorage.setItem("apiUrl","https://luxura-inventory-api.onrender.com");
   }
-
   document.getElementById("apiUrl").value = localStorage.getItem("apiUrl");
   document.getElementById("apiKey").value = localStorage.getItem("apiKey") || "";
 
-  // ✅ Désactive parce qu'on passe par Wix Proxy (postMessage)
   document.getElementById("apiUrl").disabled = true;
   document.getElementById("apiKey").disabled = true;
   document.getElementById("apiUrl").value = "Wix Proxy (postMessage)";
