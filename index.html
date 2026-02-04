@@ -412,6 +412,50 @@ async function submitMovement(){
   }
 }
 
+async function loadSalons(){
+  try {
+    const rows = await WixBridge.call("getSalons");
+
+    const opts = rows.map(s => `<option value="${s.id}">${s.name}</option>`).join("");
+    document.getElementById("filterSalon").innerHTML = `<option value="">— Tous les salons —</option>` + opts;
+    document.getElementById("movSalon").innerHTML   = `<option value="">— Tous les salons —</option>` + opts;
+
+    document.getElementById("salonsList").innerHTML = rows.length
+      ? `<table><tr><th>ID</th><th>Nom</th><th>Adresse</th></tr>${
+          rows.map(s=>`<tr><td>${s.id}</td><td>${s.name}</td><td>${s.address||""}</td></tr>`).join("")
+        }</table>`
+      : "<div class='muted'>Aucun salon…</div>";
+
+    logLine(`Salons chargés: ${rows.length}`);
+  } catch (e) {
+    toast("Erreur salons", false);
+    logLine("❌ getSalons FAIL: " + (e?.message || e));
+    document.getElementById("salonsList").innerHTML = "<div class='muted'>❌ Erreur salons</div>";
+  }
+}
+
+ async function loadProducts(){
+  try {
+    const rows = await WixBridge.call("getProducts");
+
+    const opts = rows.map(p => `<option value="${p.id}">${p.sku} — ${p.name}</option>`).join("");
+    document.getElementById("filterProduct").innerHTML = `<option value="">— Tous les produits —</option>` + opts;
+    document.getElementById("movProduct").innerHTML    = `<option value="">— Tous les produits —</option>` + opts;
+
+    document.getElementById("productsList").innerHTML = rows.length
+      ? `<table><tr><th>ID</th><th>SKU</th><th>Nom</th><th>Long.</th><th>Couleur</th><th>Prix</th></tr>${
+          rows.map(p=>`<tr><td>${p.id}</td><td>${p.sku}</td><td>${p.name}</td><td>${p.length_inch||""}</td><td>${p.color||""}</td><td>${p.price||""}</td></tr>`).join("")
+        }</table>`
+      : "<div class='muted'>Aucun produit…</div>";
+
+    logLine(`Produits chargés: ${rows.length}`);
+  } catch (e) {
+    toast("Erreur produits", false);
+    logLine("❌ getProducts FAIL: " + (e?.message || e));
+    document.getElementById("productsList").innerHTML = "<div class='muted'>❌ Erreur produits</div>";
+  }
+}
+ 
 /* =========================
            INIT
 ========================= */
