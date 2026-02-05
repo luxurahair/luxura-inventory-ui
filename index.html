@@ -67,22 +67,52 @@
     .toast.err{border-color:#5a2a2a;color:#ffd7d7}
 
     /* =========================
-       INVENTAIRE: SCROLL FIXE
+       LISTES SCROLLABLES
     ========================= */
-    #inventoryWrap{
-      max-height: 420px;        /* ~10 lignes visibles */
+
+    /* Salons: scroll */
+    #salonsWrap{
+      max-height: 260px;
       overflow: auto;
       border: 1px solid var(--line);
       border-radius: 12px;
       background:#0d0d0d;
       margin-top: 10px;
     }
+
+    /* Produits: scroll */
+    #productsWrap{
+      max-height: 260px;
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background:#0d0d0d;
+      margin-top: 10px;
+    }
+
+    /* Inventaire: scroll */
+    #inventoryWrap{
+      max-height: 420px; /* ~10 lignes visibles */
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background:#0d0d0d;
+      margin-top: 10px;
+    }
+
+    /* Header sticky */
+    #salonsWrap thead th,
+    #productsWrap thead th,
     #inventoryWrap thead th{
       position: sticky;
       top: 0;
       background: #0d0d0d;
       z-index: 2;
     }
+
+    /* Compact */
+    #salonsWrap th, #salonsWrap td,
+    #productsWrap th, #productsWrap td,
     #inventoryWrap th, #inventoryWrap td{
       padding: 8px;
     }
@@ -101,7 +131,7 @@
           <div class="muted">Interface noire & or • connectée à l’API Render</div>
         </div>
       </div>
-      <div class="muted">v1.2</div>
+      <div class="muted">v1.3</div>
     </div>
 
     <!-- CONFIG -->
@@ -133,7 +163,10 @@
           <input id="salonAddr" placeholder="Adresse">
           <button>Ajouter</button>
         </form>
-        <div id="salonsList" class="muted">Aucun salon…</div>
+
+        <div id="salonsWrap">
+          <div id="salonsList" class="muted">Aucun salon…</div>
+        </div>
       </div>
 
       <div class="card">
@@ -146,7 +179,10 @@
           <input id="prodPrice" placeholder="Prix">
           <button>Ajouter</button>
         </form>
-        <div id="productsList" class="muted">Aucun produit…</div>
+
+        <div id="productsWrap">
+          <div id="productsList" class="muted">Aucun produit…</div>
+        </div>
       </div>
     </div>
 
@@ -203,10 +239,7 @@
 function cfg() {
   let api = document.getElementById("apiUrl").value.trim();
   if (!api) api = "https://luxura-inventory-api.onrender.com";
-  try {
-    const u = new URL(api);
-    api = u.origin;
-  } catch (e) {}
+  try { api = new URL(api).origin; } catch (e) {}
   document.getElementById("apiUrl").value = api;
   localStorage.setItem("apiUrl", api);
 
@@ -216,12 +249,6 @@ function cfg() {
   return { apiUrl: api, apiKey };
 }
 function saveCfg() { cfg(); }
-function headers() {
-  const h = { "Content-Type": "application/json" };
-  const k = localStorage.getItem("apiKey");
-  if (k) h["x-api-key"] = k;
-  return h;
-}
 function setStatus(id,msg,ok=true){
   const el=document.getElementById(id);
   el.textContent=msg;
@@ -277,10 +304,10 @@ const WixBridge = (() => {
 
 async function testApi(){
   try {
-    const res = await WixBridge.call("ping");
+    await WixBridge.call("ping");
     setStatus("testStatus", "Connexion OK");
     toast("Connexion OK", true);
-    logLine("Bridge OK: " + JSON.stringify(res));
+    logLine("Bridge OK");
   } catch (e) {
     console.log("BRIDGE ERROR:", e);
     setStatus("testStatus","Impossible de joindre l’API",false);
@@ -350,9 +377,12 @@ async function loadSalons(){
     document.getElementById("movSalon").innerHTML   = `<option value="">— Tous les salons —</option>` + opts;
 
     document.getElementById("salonsList").innerHTML = rows.length
-      ? `<table><tr><th>ID</th><th>Nom</th><th>Adresse</th></tr>${
-          rows.map(s=>`<tr><td>${s.id}</td><td>${s.name}</td><td>${s.address||""}</td></tr>`).join("")
-        }</table>`
+      ? `<table>
+          <thead><tr><th>ID</th><th>Nom</th><th>Adresse</th></tr></thead>
+          <tbody>
+            ${rows.map(s=>`<tr><td>${s.id}</td><td>${s.name}</td><td>${s.address||""}</td></tr>`).join("")}
+          </tbody>
+        </table>`
       : "<div class='muted'>Aucun salon…</div>";
 
     logLine(`Salons chargés: ${rows.length}`);
@@ -372,9 +402,12 @@ async function loadProducts(){
     document.getElementById("movProduct").innerHTML    = `<option value="">— Tous les produits —</option>` + opts;
 
     document.getElementById("productsList").innerHTML = rows.length
-      ? `<table><tr><th>ID</th><th>SKU</th><th>Nom</th><th>Long.</th><th>Couleur</th><th>Prix</th></tr>${
-          rows.map(p=>`<tr><td>${p.id}</td><td>${p.sku}</td><td>${p.name}</td><td>${p.length_inch||""}</td><td>${p.color||""}</td><td>${p.price||""}</td></tr>`).join("")
-        }</table>`
+      ? `<table>
+          <thead><tr><th>ID</th><th>SKU</th><th>Nom</th><th>Long.</th><th>Couleur</th><th>Prix</th></tr></thead>
+          <tbody>
+            ${rows.map(p=>`<tr><td>${p.id}</td><td>${p.sku}</td><td>${p.name}</td><td>${p.length_inch||""}</td><td>${p.color||""}</td><td>${p.price||""}</td></tr>`).join("")}
+          </tbody>
+        </table>`
       : "<div class='muted'>Aucun produit…</div>";
 
     logLine(`Produits chargés: ${rows.length}`);
@@ -389,10 +422,7 @@ async function loadInventory(){
   const s = document.getElementById('filterSalon').value;
   const p = document.getElementById('filterProduct').value;
 
-  const rows = await WixBridge.call("getInventoryView", {
-    salon_id: s || "",
-    product_id: p || ""
-  });
+  const rows = await WixBridge.call("getInventoryView", { salon_id: s || "", product_id: p || "" });
 
   document.getElementById('inventoryTable').innerHTML = rows.length
     ? `<table>
@@ -414,7 +444,7 @@ async function loadInventory(){
       </table>`
     : "<div class='muted'>Aucune donnée…</div>";
 
-  logLine(`Inventaire chargé (${rows.length} lignes)${s?` • salon ${s}`:''}${p?` • produit ${p}`:''}`);
+  logLine(`Inventaire chargé: ${rows.length}`);
 }
 
 function quickType(t){
